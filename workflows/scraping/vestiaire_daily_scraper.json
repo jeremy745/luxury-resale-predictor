@@ -1,0 +1,247 @@
+{
+  "name": "Vestiaire Collective Daily Scraper",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "minutesInterval": 1,
+              "triggerAtHour": 6
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Brands to scrape\nconst brands = [\n  \"Louis Vuitton\",\n  \"Chanel\",\n  \"Hermès\",\n  \"Dior\",\n  \"Gucci\"\n];\n\n// Categories to scrape\nconst categories = [\n  \"bags\"\n];\n\n// Generate combinations for scraping\nconst combinations = [];\nfor (const brand of brands) {\n  for (const category of categories) {\n    combinations.push({\n      brand,\n      category,\n      url: `https://www.vestiairecollective.com/search?q=${encodeURIComponent(brand + ' ' + category)}`\n    });\n  }\n}\n\nreturn [\n  {\n    json: {\n      combinations,\n      totalTargets: combinations.length,\n      timestamp: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "id": "2",
+      "name": "Generate Scraping Targets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "3",
+      "name": "Split Targets",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "#!/bin/bash\n\n# This is a placeholder for the actual scraping script\n# In production, this would call your Python scraper\n\nBRAND=\"{{$node[\"Split Targets\"].json[\"combinations\"][0][\"brand\"]}}\"\nCATEGORY=\"{{$node[\"Split Targets\"].json[\"combinations\"][0][\"category\"]}}\"\nURL=\"{{$node[\"Split Targets\"].json[\"combinations\"][0][\"url\"]}}\"\n\necho \"Scraping $BRAND - $CATEGORY\"\necho \"URL: $URL\"\n\n# Simulate scraping\necho \"{\\\"brand\\\": \\\"$BRAND\\\", \\\"category\\\": \\\"$CATEGORY\\\", \\\"items_scraped\\\": 25, \\\"status\\\": \\\"success\\\", \\\"timestamp\\\": \\\"$(date -u +\\\"%Y-%m-%dT%H:%M:%SZ\\\")\\\"}\"",
+        "executeOnce": true
+      },
+      "id": "4",
+      "name": "Run Scraper",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process the scraper output\nconst output = $input.item.json.stdout;\n\n// In a real scenario, we would parse the JSON from the scraper\nlet scraperResult;\ntry {\n  scraperResult = JSON.parse(output);\n} catch (error) {\n  scraperResult = { error: \"Failed to parse scraper output\", raw: output };\n}\n\n// Add timestamp and processing metadata\nscraperResult.processed_at = new Date().toISOString();\nscraperResult.node_id = $node.id;\n\nreturn [\n  {\n    json: scraperResult\n  }\n];"
+      },
+      "id": "5",
+      "name": "Process Scraper Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "mergeByPosition"
+      },
+      "id": "6",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "functionName": "defaultPostgreQuery",
+        "query": "INSERT INTO \"scraping_results\" (\"brand\", \"category\", \"items_scraped\", \"status\", \"timestamp\", \"processed_at\")\nVALUES ('{{$node[\"Process Scraper Results\"].json[\"brand\"]}}', '{{$node[\"Process Scraper Results\"].json[\"category\"]}}', {{$node[\"Process Scraper Results\"].json[\"items_scraped\"]}}, '{{$node[\"Process Scraper Results\"].json[\"status\"]}}', '{{$node[\"Process Scraper Results\"].json[\"timestamp\"]}}', '{{$node[\"Process Scraper Results\"].json[\"processed_at\"]}}')\nRETURNING id;"
+      },
+      "id": "7",
+      "name": "Save to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "Postgres Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$node[\"Process Scraper Results\"].json[\"status\"]}}",
+              "value2": "success"
+            }
+          ]
+        }
+      },
+      "id": "8",
+      "name": "Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "subject": "Vestiaire Scraping Success Report",
+        "html": "<h2>Scraping Completed Successfully</h2>\n<p>Date: {{$node[\"Process Scraper Results\"].json[\"timestamp\"]}}</p>\n\n<h3>Summary:</h3>\n<ul>\n  <li><strong>Brand:</strong> {{$node[\"Process Scraper Results\"].json[\"brand\"]}}</li>\n  <li><strong>Category:</strong> {{$node[\"Process Scraper Results\"].json[\"category\"]}}</li>\n  <li><strong>Items Scraped:</strong> {{$node[\"Process Scraper Results\"].json[\"items_scraped\"]}}</li>\n</ul>\n\n<p>The data has been saved to the database.</p>"
+      },
+      "id": "9",
+      "name": "Success Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [
+        1900,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "subject": "Vestiaire Scraping Error Alert",
+        "html": "<h2>⚠️ Scraping Error</h2>\n<p>Date: {{$node[\"Process Scraper Results\"].json[\"timestamp\"]}}</p>\n\n<h3>Error Details:</h3>\n<ul>\n  <li><strong>Brand:</strong> {{$node[\"Process Scraper Results\"].json[\"brand\"]}}</li>\n  <li><strong>Category:</strong> {{$node[\"Process Scraper Results\"].json[\"category\"]}}</li>\n  <li><strong>Status:</strong> {{$node[\"Process Scraper Results\"].json[\"status\"]}}</li>\n  <li><strong>Error:</strong> {{$node[\"Process Scraper Results\"].json[\"error\"]}}</li>\n</ul>\n\n<p>Please check the scraping service and logs for more details.</p>"
+      },
+      "id": "10",
+      "name": "Error Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [
+        1900,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Generate Scraping Targets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Scraping Targets": {
+      "main": [
+        [
+          {
+            "node": "Split Targets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Targets": {
+      "main": [
+        [
+          {
+            "node": "Run Scraper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Scraper": {
+      "main": [
+        [
+          {
+            "node": "Process Scraper Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Scraper Results": {
+      "main": [
+        [
+          {
+            "node": "Save to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Database": {
+      "main": [
+        [
+          {
+            "node": "Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Success?": {
+      "main": [
+        [
+          {
+            "node": "Success Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
