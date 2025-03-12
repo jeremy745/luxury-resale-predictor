@@ -1,0 +1,45 @@
+version: '3'
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    restart: always
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - N8N_HOST=localhost
+      - NODE_ENV=production
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - DATABASE_TYPE=postgresdb
+      - DATABASE_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DATABASE_POSTGRESDB_HOST=postgres
+      - DATABASE_POSTGRESDB_PORT=5432
+      - DATABASE_POSTGRESDB_USER=${POSTGRES_USER}
+      - DATABASE_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      - postgres
+    networks:
+      - n8n-network
+
+  postgres:
+    image: postgres:13
+    restart: always
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - n8n-network
+
+volumes:
+  n8n_data:
+  postgres_data:
+
+networks:
+  n8n-network:
