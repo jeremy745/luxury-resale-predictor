@@ -1,0 +1,192 @@
+{
+  "name": "Hermes Kelly Scraper Test",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "9c559cdd-f24f-4b93-a8ca-e1c4539022df",
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "node {{$json.scraperPath}} --brand \"Hermès\" --model \"Kelly\" --maxPages 2",
+        "executeOnce": true
+      },
+      "id": "de5a46c2-e1c5-4ed4-9363-93c45c1f42d3",
+      "name": "Execute Scraper",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Définir le chemin vers le scraper\n// Remplacez ceci par le chemin réel sur votre système\nconst scraperPath = \"/chemin/vers/votre/dépôt/luxury-scrapers/tests/prototypes/vestiaire_scraper.js\";\n\n// Pour une configuration personnalisée, vous pouvez ajouter d'autres paramètres ici\nreturn [\n  {\n    json: {\n      scraperPath,\n      brand: \"Hermès\",\n      model: \"Kelly\",\n      maxPages: 2\n    }\n  }\n];"
+      },
+      "id": "a59d84c4-6cc7-451c-97ec-72b6a4cd36f5",
+      "name": "Set Scraper Path",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Analyser les résultats JSON\nlet output;\n\ntry {\n  // La sortie de la commande contiendra des lignes de log suivies du JSON\n  // Trouver le début du JSON (première accolade)\n  const stdout = $input.item.json.stdout;\n  const jsonStartIdx = stdout.indexOf('[');\n  \n  if (jsonStartIdx === -1) {\n    // Pas de JSON trouvé, il y a peut-être eu une erreur\n    return [\n      {\n        json: {\n          success: false,\n          error: \"Aucun JSON trouvé dans la sortie\",\n          raw_output: stdout\n        }\n      }\n    ];\n  }\n  \n  // Extraire et parser le JSON\n  const jsonStr = stdout.substring(jsonStartIdx);\n  const products = JSON.parse(jsonStr);\n  \n  // Ajouter quelques statistiques\n  output = {\n    success: true,\n    total_products: products.length,\n    products: products,\n    stats: {\n      brands: {},\n      conditions: {},\n      avg_price: 0,\n      min_price: Number.MAX_SAFE_INTEGER,\n      max_price: 0\n    }\n  };\n  \n  // Calculer des statistiques\n  let totalPrice = 0;\n  let numPrices = 0;\n  \n  products.forEach(product => {\n    // Compter les marques\n    if (product.brand) {\n      output.stats.brands[product.brand] = (output.stats.brands[product.brand] || 0) + 1;\n    }\n    \n    // Compter les conditions\n    if (product.condition) {\n      output.stats.conditions[product.condition] = (output.stats.conditions[product.condition] || 0) + 1;\n    }\n    \n    // Analyser les prix\n    if (product.price) {\n      try {\n        // Extraire le nombre du string de prix (15 500,00 € -> 15500)\n        const priceStr = product.price.replace(/[^\\d,.]/g, '').replace(',', '.');\n        const price = parseFloat(priceStr);\n        \n        if (!isNaN(price)) {\n          totalPrice += price;\n          numPrices++;\n          \n          output.stats.min_price = Math.min(output.stats.min_price, price);\n          output.stats.max_price = Math.max(output.stats.max_price, price);\n        }\n      } catch (e) {\n        // Ignorer les erreurs de parsing de prix\n      }\n    }\n  });\n  \n  // Calculer le prix moyen\n  if (numPrices > 0) {\n    output.stats.avg_price = Math.round((totalPrice / numPrices) * 100) / 100;\n  }\n  \n  // Formater les prix pour l'affichage\n  if (output.stats.min_price === Number.MAX_SAFE_INTEGER) {\n    output.stats.min_price = 0;\n  }\n  \n  output.stats.min_price = output.stats.min_price.toLocaleString('fr-FR') + ' €';\n  output.stats.max_price = output.stats.max_price.toLocaleString('fr-FR') + ' €';\n  output.stats.avg_price = output.stats.avg_price.toLocaleString('fr-FR') + ' €';\n  \n} catch (error) {\n  // En cas d'erreur de parsing\n  output = {\n    success: false,\n    error: error.message,\n    raw_output: $input.item.json.stdout\n  };\n}\n\nreturn [\n  {\n    json: output\n  }\n];"
+      },
+      "id": "af6b1fb3-a19a-496a-90b4-93e6ced6a9a7",
+      "name": "Process Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "cdd84ae2-e5fb-475c-bbc6-ca98a7b28d9c",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json[\"success\"]}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "8e6b76b3-3d7c-42f3-9339-4e2dac2f4bdf",
+      "name": "IF",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "subject": "✅ Hermes Kelly Scraper: {{$json[\"total_products\"]}} produits trouvés",
+        "contentType": "text/html",
+        "text": "<h1>Résultats du scraping pour Hermès Kelly</h1>\n<p>Le scraper a trouvé <strong>{{$json[\"total_products\"]}}</strong> produits.</p>\n\n<h2>Statistiques</h2>\n<ul>\n  <li><strong>Prix moyen:</strong> {{$json[\"stats\"][\"avg_price\"]}}</li>\n  <li><strong>Prix minimum:</strong> {{$json[\"stats\"][\"min_price\"]}}</li>\n  <li><strong>Prix maximum:</strong> {{$json[\"stats\"][\"max_price\"]}}</li>\n</ul>\n\n<h2>Liste des produits</h2>\n<table border=\"1\" cellpadding=\"5\" cellspacing=\"0\">\n  <tr>\n    <th>Image</th>\n    <th>Titre</th>\n    <th>Prix</th>\n    <th>Condition</th>\n    <th>Lien</th>\n  </tr>\n  \n  {% for product in $json[\"products\"] %}\n  <tr>\n    <td>\n      {% if product.image %}\n        <img src=\"{{ product.image }}\" width=\"100\">\n      {% else %}\n        Pas d'image\n      {% endif %}\n    </td>\n    <td>\n      <strong>{{ product.brand }}</strong><br>\n      {{ product.title }}\n    </td>\n    <td>\n      <strong>{{ product.price }}</strong>\n      {% if product.original_price %}\n        <br><s>{{ product.original_price }}</s>\n        <br><span style=\"color:red\">{{ product.discount_percentage }}</span>\n      {% endif %}\n    </td>\n    <td>{{ product.condition }}</td>\n    <td>\n      {% if product.link %}\n        <a href=\"{{ product.link }}\" target=\"_blank\">Voir l'article</a>\n      {% else %}\n        Lien non disponible\n      {% endif %}\n    </td>\n  </tr>\n  {% endfor %}\n</table>"
+      },
+      "id": "b9fd1b9e-2da0-43f9-badd-69fcca732fa9",
+      "name": "Success Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "subject": "❌ Erreur Scraper Hermes Kelly",
+        "contentType": "text/html",
+        "text": "<h1>Erreur lors du scraping</h1>\n<p>Une erreur s'est produite lors de l'exécution du scraper Hermès Kelly.</p>\n\n<h2>Détails de l'erreur</h2>\n<pre>{{ $json[\"error\"] }}</pre>\n\n<h2>Sortie brute</h2>\n<pre>{{ $json[\"raw_output\"] }}</pre>"
+      },
+      "id": "03f20e36-6204-41f9-8c6e-3aa70b67c38d",
+      "name": "Error Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Set Scraper Path",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Scraper": {
+      "main": [
+        [
+          {
+            "node": "Process Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Scraper Path": {
+      "main": [
+        [
+          {
+            "node": "Execute Scraper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Results": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "IF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF": {
+      "main": [
+        [
+          {
+            "node": "Success Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
